@@ -71,3 +71,13 @@ export default defineConfig([
   },
 ])
 ```
+
+## DMX por serial (Tauri)
+
+- Comandos Tauri expuestos al front:
+  - `dmx_list_ports`: devuelve la lista de puertos detectados por `tauri-plugin-serialplugin`.
+  - `dmx_set_levels`: abre el puerto indicado (si no está ya abierto) y envía frames DMX con el buffer recibido.
+- El loop interno reenvía el último frame a ~40 Hz para mantener vivo el universo DMX sin saturar el front.
+- Parámetros de conexión: **250000 baud**, 8 bits de datos, 2 bits de parada, paridad **None**, sin control de flujo.
+- Los frames que se envían tienen **513 bytes** (Start Code + 512 canales).
+- Probado con interfaces basadas en **Enttec OpenDMX, DMXKing** y adaptadores con chips **FTDI/CH340**.
