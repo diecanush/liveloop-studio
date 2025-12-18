@@ -12,6 +12,8 @@ interface AudioCardProps {
   onRemove: (id: string) => void;
   onPlayRequest: (id: string, shiftKey: boolean) => void;
   isKeyMappingMode: boolean;
+  sceneColor?: string | null;
+  sceneName?: string | null;
 }
 
 const VolumeControl = ({ volume, onChange }: { volume: number, onChange: (vol: number) => void }) => {
@@ -82,7 +84,7 @@ const VolumeControl = ({ volume, onChange }: { volume: number, onChange: (vol: n
     </div>
   );
 };
-const AudioCard = forwardRef<AudioCardHandle, AudioCardProps>(({ track, isSelected, onSelect, onUpdate, onRemove, onPlayRequest }, ref) => {
+const AudioCard = forwardRef<AudioCardHandle, AudioCardProps>(({ track, isSelected, onSelect, onUpdate, onRemove, onPlayRequest, sceneColor, sceneName }, ref) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -402,7 +404,16 @@ const AudioCard = forwardRef<AudioCardHandle, AudioCardProps>(({ track, isSelect
       <div className="flex justify-between items-start mb-3">
         <div className="truncate pr-2 w-full">
           <div className="flex justify-between items-center w-full">
-            <h3 className="text-sm font-medium text-gray-200 truncate pr-2" title={track.name}>{track.name}</h3>
+            <div className="flex items-center gap-2 min-w-0">
+              {sceneColor && (
+                <div
+                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow ring-1 ring-black/30"
+                  style={{ backgroundColor: sceneColor }}
+                  title={sceneName || 'Linked scene'}
+                ></div>
+              )}
+              <h3 className="text-sm font-medium text-gray-200 truncate pr-2" title={track.name}>{track.name}</h3>
+            </div>
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(track.id); }}
               className="text-studio-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
