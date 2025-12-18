@@ -14,6 +14,14 @@ export interface TrackData {
 
 export type StudioItem = TrackData;
 
+export interface DMXScene {
+  id: string;
+  name: string;
+  color: string;
+  levels: number[]; // Up to 512 channels
+  linkedItemId?: string | null;
+}
+
 export interface AudioCardHandle {
   play: () => void;
   pause: () => void;
@@ -36,9 +44,14 @@ export interface SavedSession {
   version: number;
   name: string;
   items: SavedSessionTrack[];
+  dmxLevels?: number[];
+  scenes?: DMXScene[];
+  selectedInterface?: string;
+  activeSceneId?: string | null;
   // Deprecated but kept for migration if needed, though we'll prefer 'items'
   tracks?: SavedSessionTrack[];
 }
+
 
 export interface DmxPortInfo {
   path: string;
@@ -47,3 +60,4 @@ export interface DmxPortInfo {
   product?: string;
   serial_number?: string;
 }
+

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Upload, Plus, Save, FolderOpen, AlertCircle, PlayCircle, Music, Keyboard } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -6,7 +6,8 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStr
 
 import AudioCard from './components/AudioCard';
 import SortableItem from './components/SortableItem';
-import type { TrackData, AudioCardHandle, SavedSession, StudioItem } from './types';
+import DMXConsole from './components/DMXConsole';
+import type { TrackData, AudioCardHandle, SavedSession, StudioItem, DMXScene } from './types';
 
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
@@ -20,12 +21,19 @@ const App: React.FC = () => {
   console.log("App component mounting...");
   // Unified State
   const [items, setItems] = useState<StudioItem[]>([]);
-
+  const [dmxLevels, setDmxLevels] = useState<number[]>(() => Array(512).fill(0));
+  const [selectedInterface, setSelectedInterface] = useState<string>('Auto');
+  const [availableInterfaces] = useState<string[]>(['Auto', 'ArtNet', 'sACN']);
+  const [dmxStatus, setDmxStatus] = useState<{ state: 'idle' | 'sending' | 'ok' | 'error'; message: string }>({ state: 'idle', message: 'Esperando cambios' });
+  const [scenes, setScenes] = useState<DMXScene[]>([]);
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
 
   const [sessionName, setSessionName] = useState("My Set");
   const trackRefs = useRef<{ [key: string]: AudioCardHandle | null }>({});
   const [showKeyMapHint, setShowKeyMapHint] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  const sendTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   // DnD Sensors
@@ -40,6 +48,105 @@ const App: React.FC = () => {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const clampLevels = useCallback((levels: number[]) => {
+    return Array.from({ length: 512 }, (_, idx) => {
+      const val = levels[idx] ?? 0;
+      return Math.max(0, Math.min(255, val));
+    });
+  }, []);
+
+  const handleChangeLevel = useCallback((index: number, value: number) => {
+    setDmxLevels(prev => {
+      const next = [...prev];
+      next[index] = Math.max(0, Math.min(255, value));
+      return next;
+    });
+    setActiveSceneId(null);
+  }, []);
+
+  const handleBlackout = useCallback(() => {
+    setDmxLevels(Array(512).fill(0));
+    setActiveSceneId(null);
+  }, []);
+
+  const handleFull = useCallback(() => {
+    setDmxLevels(Array(512).fill(255));
+    setActiveSceneId(null);
+  }, []);
+
+  const sceneColors = useMemo(() => ['#fb7185', '#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#f472b6', '#fb923c', '#eab308'], []);
+
+  const handleCreateScene = useCallback(() => {
+    setScenes(prev => {
+      const color = sceneColors[prev.length % sceneColors.length];
+      const newScene: DMXScene = {
+        id: generateId(),
+        name: `Escena ${prev.length + 1}`,
+        color,
+        levels: [...dmxLevels],
+        linkedItemId: null
+      };
+      return [...prev, newScene];
+    });
+  }, [dmxLevels, sceneColors]);
+
+  const handleRecordScene = useCallback((sceneId: string) => {
+    setScenes(prev => prev.map(scene => scene.id === sceneId ? { ...scene, levels: [...dmxLevels] } : scene));
+    setActiveSceneId(sceneId);
+  }, [dmxLevels]);
+
+  const handleRecallScene = useCallback((sceneId: string) => {
+    const scene = scenes.find(s => s.id === sceneId);
+    if (!scene) return;
+    setDmxLevels(clampLevels(scene.levels));
+    setActiveSceneId(sceneId);
+  }, [scenes, clampLevels]);
+
+  const handleUpdateScene = useCallback((sceneId: string, updates: Partial<DMXScene>) => {
+    setScenes(prev => prev.map(scene => scene.id === sceneId ? { ...scene, ...updates } : scene));
+  }, []);
+
+  const sendLevelsToBackend = useCallback(async (levels: number[]) => {
+    try {
+      setDmxStatus({ state: 'sending', message: 'Enviando niveles…' });
+      const response = await fetch('/api/dmx/levels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interface: selectedInterface, levels })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setDmxStatus({ state: 'ok', message: 'Conectado' });
+    } catch (err) {
+      console.error('Failed to send DMX levels', err);
+      setDmxStatus({ state: 'error', message: 'Error al enviar DMX' });
+    }
+  }, [selectedInterface]);
+
+  useEffect(() => {
+    if (sendTimeout.current) clearTimeout(sendTimeout.current);
+    sendTimeout.current = setTimeout(() => sendLevelsToBackend(dmxLevels), 200);
+    return () => {
+      if (sendTimeout.current) clearTimeout(sendTimeout.current);
+    };
+  }, [dmxLevels, sendLevelsToBackend]);
+
+  useEffect(() => {
+    return () => {
+      if (sendTimeout.current) clearTimeout(sendTimeout.current);
+    };
+  }, []);
+
+  const activeSceneLinks = useMemo(() => {
+    const activeScene = scenes.find(scene => scene.id === activeSceneId);
+    if (!activeScene || !activeScene.linkedItemId) return {} as Record<string, { color: string; name: string }>;
+    return {
+      [activeScene.linkedItemId]: {
+        color: activeScene.color,
+        name: activeScene.name
+      }
+    } as Record<string, { color: string; name: string }>;
+  }, [activeSceneId, scenes]);
 
   // -- Track Management --
 
@@ -101,6 +208,8 @@ const App: React.FC = () => {
       URL.revokeObjectURL(item.fileUrl);
       delete trackRefs.current[id];
     }
+
+    setScenes(prev => prev.map(scene => scene.linkedItemId === id ? { ...scene, linkedItemId: null } : scene));
 
     setItems(prev => prev.filter(t => t.id !== id));
   };
@@ -250,7 +359,7 @@ const App: React.FC = () => {
       if (!path) return;
 
       const sessionData: SavedSession = {
-        version: 2,
+        version: 3,
         name: sessionName,
         items: items.map(item => {
           return {
@@ -263,7 +372,11 @@ const App: React.FC = () => {
             assignedKey: item.assignedKey,
             path: item.path // Persist path
           };
-        })
+        }),
+        dmxLevels,
+        scenes,
+        selectedInterface,
+        activeSceneId
       };
 
       await writeTextFile(path, JSON.stringify(sessionData, null, 2));
@@ -293,10 +406,29 @@ const App: React.FC = () => {
       const session = JSON.parse(content) as SavedSession;
 
       setSessionName(session.name || "Loaded Session");
+      setSelectedInterface(session.selectedInterface || 'Auto');
+      setActiveSceneId(session.activeSceneId ?? null);
 
-      if (session.items) {
+      if (session.dmxLevels && Array.isArray(session.dmxLevels)) {
+        setDmxLevels(clampLevels(session.dmxLevels));
+      } else {
+        setDmxLevels(Array(512).fill(0));
+      }
+
+      if (session.scenes) {
+        setScenes(session.scenes.map(scene => ({
+          ...scene,
+          linkedItemId: scene.linkedItemId ?? null,
+          levels: clampLevels(scene.levels || [])
+        })));
+      } else {
+        setScenes([]);
+      }
+
+      const storedItems = session.items || session.tracks;
+      if (storedItems) {
         // Reconstruct items
-        const newItems: StudioItem[] = session.items.map((item: any) => {
+        const newItems: StudioItem[] = storedItems.map((item: any) => {
           return {
             id: item.id || generateId(),
             type: 'audio',
@@ -388,7 +520,25 @@ const App: React.FC = () => {
       )}
 
       {/* Main Grid */}
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <DMXConsole
+          levels={dmxLevels}
+          onChangeLevel={handleChangeLevel}
+          onBlackout={handleBlackout}
+          onFull={handleFull}
+          selectedInterface={selectedInterface}
+          availableInterfaces={availableInterfaces}
+          onInterfaceChange={setSelectedInterface}
+          status={dmxStatus}
+          scenes={scenes}
+          activeSceneId={activeSceneId}
+          onCreateScene={handleCreateScene}
+          onRecordScene={handleRecordScene}
+          onRecallScene={handleRecallScene}
+          onUpdateScene={handleUpdateScene}
+          items={items}
+        />
+
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-studio-600 border-2 border-dashed border-studio-800 rounded-xl">
             <Upload size={48} className="mb-4 opacity-50" />
@@ -426,6 +576,8 @@ const App: React.FC = () => {
                       onRemove={handleRemoveItem}
                       onPlayRequest={handlePlayRequest}
                       isKeyMappingMode={false}
+                      sceneColor={activeSceneLinks[item.id]?.color}
+                      sceneName={activeSceneLinks[item.id]?.name || null}
                     />
                   </SortableItem>
                 ))}
