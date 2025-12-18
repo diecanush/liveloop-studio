@@ -167,6 +167,32 @@ const App: React.FC = () => {
         return;
       }
 
+      // volume control for playing items
+      if (code === 'Comma' || code === 'Period') {
+        const step = 0.05;
+        const delta = code === 'Period' ? step : -step;
+
+        // Find all PLAYING audio tracks
+        const playingIds: string[] = [];
+        Object.entries(trackRefs.current).forEach(([id, ref]) => {
+          if (ref && ref.isPlaying()) {
+            playingIds.push(id);
+          }
+        });
+
+        if (playingIds.length > 0) {
+          e.preventDefault();
+          setItems(prev => prev.map(item => {
+            if (playingIds.includes(item.id) && item.type === 'audio') {
+              const newVol = Math.min(1, Math.max(0, item.volume + delta));
+              return { ...item, volume: newVol };
+            }
+            return item;
+          }));
+        }
+        return;
+      }
+
       const matchedTrack = items.find(t => t.type === 'audio' && t.assignedKey === code) as TrackData | undefined;
       if (matchedTrack) {
         e.preventDefault();
