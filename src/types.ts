@@ -51,3 +51,13 @@ export interface SavedSession {
   // Deprecated but kept for migration if needed, though we'll prefer 'items'
   tracks?: SavedSessionTrack[];
 }
+
+
+export interface DmxPortInfo {
+  path: string;
+  kind?: string;
+  manufacturer?: string;
+  product?: string;
+  serial_number?: string;
+}
+

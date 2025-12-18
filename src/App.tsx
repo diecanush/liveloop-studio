@@ -12,6 +12,7 @@ import type { TrackData, AudioCardHandle, SavedSession, StudioItem, DMXScene } f
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import DmxPanel from './components/DmxPanel';
 
 // Simple UUID generator fallback
 const generateId = () => uuidv4();
@@ -558,6 +559,10 @@ const App: React.FC = () => {
             </SortableContext>
           </DndContext>
         )}
+
+        <div className="mt-6">
+          <DmxPanel />
+        </div>
       </main>
 
       {/* Footer Status */}
